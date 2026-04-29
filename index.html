@@ -3,42 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Ultimate P2P Chess</title>
+    <title>Grandmaster Chess</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         :root { --light: #f0d9b5; --dark: #b58863; --high: rgba(255, 255, 0, 0.5); --hint: rgba(0, 0, 0, 0.2); }
         body { background: #2c3e50; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; min-height: 100vh; box-sizing: border-box; }
-        
         .container { background: #34495e; padding: 25px; border-radius: 15px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
         input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
         button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
-        
         #bot-menu { display: none; }
-        .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; }
-        
+        .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 10px 0; }
         #board-wrapper { display: none; flex-direction: column; align-items: center; }
-        #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 95vw; max-width: 450px; aspect-ratio: 1/1; border: 4px solid #34495e; background-color: #34495e; }
+        #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 92vw; max-width: 450px; aspect-ratio: 1/1; border: 4px solid #34495e; background-color: #34495e; }
         .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
         .light { background: var(--light); } .dark { background: var(--dark); }
         .selected { background: var(--high) !important; }
         .hint::after { content: ""; width: 25%; height: 25%; background: var(--hint); border-radius: 50%; position: absolute; }
         .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; z-index: 2; }
-        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; }
+        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; transition: all 0.3s; }
     </style>
 </head>
 <body>
 
     <div class="container" id="setup-menu">
         <h2>Chess</h2>
-        <input type="text" id="room-id" placeholder="Code (e.g. 12345) or 'Bot'">
+        <input type="text" id="room-id" placeholder="Code or 'Bot'">
         <br>
         <button onclick="checkInput(true)">Create / Bot</button>
         <button style="background:#3498db" onclick="checkInput(false)">Join Room</button>
     </div>
 
     <div class="container" id="bot-menu">
-        <h2>Difficulty: <span id="lvl-num">1</span></h2>
+        <h2>Difficulty</h2>
+        <div class="lvl-box" id="lvl-num">1</div>
         <button onclick="changeLvl(-1)">←</button>
         <button onclick="startBotGame()">Play!</button>
         <button onclick="changeLvl(1)">→</button>
@@ -46,7 +44,7 @@
 
     <div id="board-wrapper">
         <div id="board"></div>
-        <div id="status">Waiting...</div>
+        <div id="status">Waiting for game...</div>
     </div>
 
     <script>
@@ -67,6 +65,14 @@
             if (input === 'bot') {
                 document.getElementById('setup-menu').style.display = 'none';
                 document.getElementById('bot-menu').style.display = 'block';
+                // Keyboard support for level select
+                window.addEventListener('keydown', (e) => {
+                    if (document.getElementById('bot-menu').style.display === 'block') {
+                        if (e.key === "ArrowLeft") changeLvl(-1);
+                        if (e.key === "ArrowRight") changeLvl(1);
+                        if (e.key === "Enter") startBotGame();
+                    }
+                });
             } else {
                 initPeer(isHost, input);
             }
@@ -111,13 +117,18 @@
                         render();
                     }
                 };
-            } catch(e) { botLevel = 14; }
+            } catch(e) { 
+                console.error("Stockfish.js not found. Falling back to Level 14.");
+                botLevel = 14; 
+            }
         }
 
         function render() {
             const boardEl = document.getElementById('board');
+            const statusEl = document.getElementById('status');
             boardEl.innerHTML = '';
             const layout = game.board();
+
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
                     const sqName = String.fromCharCode(97 + j) + (8 - i);
@@ -127,16 +138,35 @@
                     if (validMoves.includes(sqName)) sq.classList.add('hint');
                     const p = layout[i][j];
                     if (p) sq.innerHTML = `<img src="${pieces[p.type][p.color]}" class="piece-img">`;
-                    sq.onclick = () => handleSquareClick(sqName);
+                    
+                    // Stop interaction if game is over
+                    if (!game.game_over()) {
+                        sq.onclick = () => handleSquareClick(sqName);
+                    }
                     boardEl.appendChild(sq);
                 }
             }
-            document.getElementById('status').innerText = game.in_checkmate() ? "Checkmate!" : (game.turn() === 'w' ? "White's Turn" : "Black's Turn");
+
+            // Check for Game Over
+            if (game.in_checkmate()) {
+                const winner = game.turn() === 'w' ? "Black" : "White";
+                statusEl.innerText = `CHECKMATE! ${winner} Wins!`;
+                statusEl.style.backgroundColor = "#27ae60";
+                setTimeout(() => alert(`Checkmate! ${winner} has won the match.`), 250);
+            } else if (game.in_draw()) {
+                statusEl.innerText = "Game Over: Draw!";
+                statusEl.style.backgroundColor = "#e67e22";
+                setTimeout(() => alert("The game ended in a draw."), 250);
+            } else {
+                statusEl.innerText = game.turn() === 'w' ? "White's Turn" : "Black's Turn";
+                statusEl.style.backgroundColor = "rgba(0,0,0,0.3)";
+            }
         }
 
         function handleSquareClick(sq) {
             if (!isBotActive && !conn) return;
             if (game.turn() !== myColor) return;
+            
             if (validMoves.includes(sq)) {
                 const move = game.move({ from: selectedSq, to: sq, promotion: 'q' });
                 if (conn) conn.send(move);
@@ -153,6 +183,7 @@
         }
 
         function makeBot() {
+            if (game.game_over()) return;
             if (botLevel === 15 && stockfish) {
                 stockfish.postMessage("position fen " + game.fen());
                 stockfish.postMessage("go depth 15");
