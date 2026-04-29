@@ -3,119 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Fixed P2P Chess</title>
+    <title>Chess: Online & Bot</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        :root { 
-            --light: #f0d9b5; 
-            --dark: #b58863; 
-            --high: rgba(255, 255, 0, 0.5); 
-            --hint: rgba(0, 0, 0, 0.2); 
-        }
-
-        body { 
-            background: #2c3e50; 
-            color: white; 
-            font-family: sans-serif;
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            margin: 0;
-            padding: 10px;
-            min-height: 100vh;
-            box-sizing: border-box;
-        }
-
-        .menu { 
-            background: #34495e; 
-            padding: 15px; 
-            border-radius: 12px; 
-            margin-bottom: 10px; 
-            text-align: center; 
-            width: 100%; 
-            max-width: 360px; 
-        }
-
-        input { 
-            padding: 10px; 
-            border-radius: 6px; 
-            border: none; 
-            width: 80%; 
-            margin-bottom: 10px; 
-            font-size: 16px;
-        }
-
-        button { 
-            padding: 10px 15px; 
-            cursor: pointer; 
-            background: #27ae60; 
-            color: white; 
-            border: none; 
-            border-radius: 6px; 
-            font-weight: bold; 
-            margin: 5px;
-        }
-
-        /* THE BOARD FIX */
-        #board { 
-            display: grid; 
-            grid-template-columns: repeat(8, 12.5%); /* Explicitly 1/8th per square */
-            grid-template-rows: repeat(8, 12.5%);
-            width: 95vw;
-            max-width: 450px;
-            aspect-ratio: 1 / 1; /* Forces a perfect square */
-            border: 2px solid #34495e; 
-            background-color: #34495e;
-            user-select: none;
-            touch-action: none;
-        }
-
-        .square { 
-            width: 100%;
-            height: 100%;
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            position: relative; 
-        }
-
-        .light { background: var(--light); } 
-        .dark { background: var(--dark); }
+        :root { --light: #f0d9b5; --dark: #b58863; --high: rgba(255, 255, 0, 0.5); --hint: rgba(0, 0, 0, 0.2); }
+        body { background: #2c3e50; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; min-height: 100vh; box-sizing: border-box; }
+        .menu { background: #34495e; padding: 15px; border-radius: 12px; margin-bottom: 10px; text-align: center; width: 100%; max-width: 360px; }
+        input { padding: 10px; border-radius: 6px; border: none; width: 80%; margin-bottom: 10px; font-size: 16px; text-align: center; }
+        button { padding: 10px 15px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 6px; font-weight: bold; margin: 5px; }
+        #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 95vw; max-width: 450px; aspect-ratio: 1 / 1; border: 2px solid #34495e; background-color: #34495e; user-select: none; touch-action: none; }
+        .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
+        .light { background: var(--light); } .dark { background: var(--dark); }
         .selected { background: var(--high) !important; }
-
-        .hint::after { 
-            content: ""; 
-            width: 25%; 
-            height: 25%; 
-            background: var(--hint); 
-            border-radius: 50%; 
-            position: absolute; 
-        }
-
-        .piece-img { 
-            width: 90%; 
-            height: 90%; 
-            object-fit: contain; 
-            pointer-events: none; 
-        }
-
-        #status { 
-            margin: 10px; 
-            padding: 8px 15px; 
-            background: rgba(0,0,0,0.3); 
-            border-radius: 20px;
-            font-size: 0.9rem;
-        }
+        .hint::after { content: ""; width: 25%; height: 25%; background: var(--hint); border-radius: 50%; position: absolute; }
+        .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; z-index: 2; }
+        #status { margin: 10px; padding: 8px 15px; background: rgba(0,0,0,0.3); border-radius: 20px; font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
     <div class="menu" id="setup-menu">
-        <input type="text" id="room-id" placeholder="Code (e.g. 12345)">
+        <input type="text" id="room-id" placeholder="Code (e.g. 12345 or Bot)">
         <br>
-        <button onclick="initPeer(true)">Create</button>
-        <button style="background:#3498db" onclick="initPeer(false)">Join</button>
+        <button onclick="initPeer(true)">Create Room</button>
+        <button style="background:#3498db" onclick="initPeer(false)">Join Room</button>
     </div>
 
     <div id="status">Enter code to play</div>
@@ -125,8 +37,9 @@
         const boardEl = document.getElementById('board');
         const statusEl = document.getElementById('status');
         const game = new Chess();
-        let peer = null, conn = null, myColor = null, selectedSq = null, validMoves = [];
+        let peer = null, conn = null, myColor = null, selectedSq = null, validMoves = [], isBotMode = false;
 
+        // SPRITES: Ensure these exist in your repo!
         const pieces = {
             'p': { w: 'w_pawn.png',   b: 'b_pawn.png' },
             'r': { w: 'w_rook.png',   b: 'b_rook.png' },
@@ -139,10 +52,21 @@
         function initPeer(isHost) {
             const code = document.getElementById('room-id').value;
             if (!code) return alert("Enter a code!");
+
+            // SECRET BOT ACTIVATION
+            if (code.toLowerCase() === 'bot') {
+                isBotMode = true;
+                myColor = 'w'; // Human is always White against Bot
+                document.getElementById('setup-menu').style.display = 'none';
+                statusEl.innerText = "Playing against Bot";
+                render();
+                return;
+            }
+
             peer = isHost ? new Peer(code) : new Peer();
             myColor = isHost ? 'w' : 'b';
             
-            peer.on('open', (id) => {
+            peer.on('open', () => {
                 if (isHost) statusEl.innerText = "Waiting for friend...";
                 else { conn = peer.connect(code); setupConnection(); }
                 document.getElementById('setup-menu').style.display = 'none';
@@ -172,15 +96,29 @@
                     boardEl.appendChild(sq);
                 }
             }
-            statusEl.innerText = game.in_checkmate() ? "Checkmate!" : (game.turn() === myColor ? "Your Turn" : "Waiting...");
+            updateStatusText();
+        }
+
+        function updateStatusText() {
+            if (game.in_checkmate()) statusEl.innerText = "Checkmate!";
+            else if (game.in_draw()) statusEl.innerText = "Draw!";
+            else if (game.turn() === myColor) statusEl.innerText = "Your Turn";
+            else statusEl.innerText = isBotMode ? "Bot is thinking..." : "Waiting for friend...";
         }
 
         function handleSquareClick(sq) {
-            if (!conn || game.turn() !== myColor) return;
+            if (!isBotMode && !conn) return;
+            if (game.turn() !== myColor) return;
+
             if (validMoves.includes(sq)) {
                 const move = game.move({ from: selectedSq, to: sq, promotion: 'q' });
-                conn.send(move);
+                if (!isBotMode) conn.send(move);
+                
                 selectedSq = null; validMoves = []; render();
+
+                if (isBotMode && !game.game_over()) {
+                    setTimeout(makeBotMove, 800);
+                }
             } else {
                 const p = game.get(sq);
                 if (p && p.color === myColor) {
@@ -189,6 +127,15 @@
                 } else { selectedSq = null; validMoves = []; }
                 render();
             }
+        }
+
+        function makeBotMove() {
+            const moves = game.moves();
+            if (moves.length === 0) return;
+            // Simple random move bot
+            const move = moves[Math.floor(Math.random() * moves.length)];
+            game.move(move);
+            render();
         }
     </script>
 </body>
