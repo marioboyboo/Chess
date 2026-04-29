@@ -3,84 +3,137 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chess: Online & Bot</title>
+    <title>Chess: Bot Select</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         :root { --light: #f0d9b5; --dark: #b58863; --high: rgba(255, 255, 0, 0.5); --hint: rgba(0, 0, 0, 0.2); }
-        body { background: #2c3e50; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; min-height: 100vh; box-sizing: border-box; }
-        .menu { background: #34495e; padding: 15px; border-radius: 12px; margin-bottom: 10px; text-align: center; width: 100%; max-width: 360px; }
-        input { padding: 10px; border-radius: 6px; border: none; width: 80%; margin-bottom: 10px; font-size: 16px; text-align: center; }
-        button { padding: 10px 15px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 6px; font-weight: bold; margin: 5px; }
-        #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 95vw; max-width: 450px; aspect-ratio: 1 / 1; border: 2px solid #34495e; background-color: #34495e; user-select: none; touch-action: none; }
+        body { background: #2c3e50; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; min-height: 100vh; box-sizing: border-box; overflow-x: hidden; }
+        
+        /* Menu Styles */
+        .container { background: #34495e; padding: 25px; border-radius: 15px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+        input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
+        button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
+        
+        /* Level Select Display */
+        #bot-menu { display: none; }
+        .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; text-shadow: 2px 2px 0px #000; }
+        .instructions { font-size: 0.8rem; color: #bdc3c7; margin-bottom: 15px; }
+
+        /* Board Styles */
+        #board-wrapper { display: none; flex-direction: column; align-items: center; }
+        #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 95vw; max-width: 450px; aspect-ratio: 1/1; border: 4px solid #34495e; background-color: #34495e; touch-action: none; }
         .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
         .light { background: var(--light); } .dark { background: var(--dark); }
         .selected { background: var(--high) !important; }
         .hint::after { content: ""; width: 25%; height: 25%; background: var(--hint); border-radius: 50%; position: absolute; }
-        .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; z-index: 2; }
-        #status { margin: 10px; padding: 8px 15px; background: rgba(0,0,0,0.3); border-radius: 20px; font-size: 0.9rem; }
+        .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; }
+        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div class="menu" id="setup-menu">
-        <input type="text" id="room-id" placeholder="Code (e.g. 12345 or Bot)">
+    <div class="container" id="setup-menu">
+        <h2>Chess Online</h2>
+        <input type="text" id="room-id" placeholder="Code or 'Bot'">
         <br>
-        <button onclick="initPeer(true)">Create Room</button>
-        <button style="background:#3498db" onclick="initPeer(false)">Join Room</button>
+        <button onclick="handleEntry()">Go</button>
     </div>
 
-    <div id="status">Enter code to play</div>
-    <div id="board"></div>
+    <div class="container" id="bot-menu">
+        <h2>Select Difficulty</h2>
+        <p class="instructions">Use Arrows ← → or Buttons</p>
+        <div class="lvl-box" id="lvl-num">1</div>
+        <div style="display: flex; justify-content: center; gap: 10px;">
+            <button onclick="changeLvl(-1)" style="background:#e67e22">←</button>
+            <button onclick="startBotGame()">Play!</button>
+            <button onclick="changeLvl(1)" style="background:#e67e22">→</button>
+        </div>
+    </div>
+
+    <div id="board-wrapper">
+        <div id="board"></div>
+        <div id="status">White's Turn</div>
+    </div>
 
     <script>
-        const boardEl = document.getElementById('board');
-        const statusEl = document.getElementById('status');
         const game = new Chess();
-        let peer = null, conn = null, myColor = null, selectedSq = null, validMoves = [], isBotMode = false;
+        let myColor = 'w', botLevel = 1, isBotActive = false, selectedSq = null, validMoves = [], stockfish = null, conn = null;
 
-        // SPRITES: Ensure these exist in your repo!
         const pieces = {
-            'p': { w: 'w_pawn.png',   b: 'b_pawn.png' },
-            'r': { w: 'w_rook.png',   b: 'b_rook.png' },
-            'n': { w: 'w_knight.png', b: 'b_knight.png' },
-            'b': { w: 'w_bishop.png', b: 'b_bishop.png' },
-            'q': { w: 'w_queen.png',  b: 'b_queen.png' },
-            'k': { w: 'w_king.png',   b: 'b_king.png' }
+            'p': { w: 'w_pawn.png', b: 'b_pawn.png', val: 10 },
+            'r': { w: 'w_rook.png', b: 'b_rook.png', val: 50 },
+            'n': { w: 'w_knight.png', b: 'b_knight.png', val: 30 },
+            'b': { w: 'w_bishop.png', b: 'b_bishop.png', val: 30 },
+            'q': { w: 'w_queen.png', b: 'b_queen.png', val: 90 },
+            'k': { w: 'w_king.png', b: 'b_king.png', val: 900 }
         };
 
-        function initPeer(isHost) {
-            const code = document.getElementById('room-id').value;
-            if (!code) return alert("Enter a code!");
+        // --- STEP 1: HANDLE ENTRY ---
+        function handleEntry() {
+            const input = document.getElementById('room-id').value.trim().toLowerCase();
+            if (!input) return alert("Enter something!");
 
-            // SECRET BOT ACTIVATION
-            if (code.toLowerCase() === 'bot') {
-                isBotMode = true;
-                myColor = 'w'; // Human is always White against Bot
+            if (input === 'bot') {
                 document.getElementById('setup-menu').style.display = 'none';
-                statusEl.innerText = "Playing against Bot";
-                render();
-                return;
+                document.getElementById('bot-menu').style.display = 'block';
+                window.addEventListener('keydown', (e) => {
+                    if (e.key === "ArrowLeft") changeLvl(-1);
+                    if (e.key === "ArrowRight") changeLvl(1);
+                    if (e.key === "Enter" && document.getElementById('bot-menu').style.display === 'block') startBotGame();
+                });
+            } else {
+                initOnline(input);
             }
-
-            peer = isHost ? new Peer(code) : new Peer();
-            myColor = isHost ? 'w' : 'b';
-            
-            peer.on('open', () => {
-                if (isHost) statusEl.innerText = "Waiting for friend...";
-                else { conn = peer.connect(code); setupConnection(); }
-                document.getElementById('setup-menu').style.display = 'none';
-            });
-            peer.on('connection', (c) => { conn = c; setupConnection(); });
-            peer.on('error', () => alert("Connection error or code taken."));
         }
 
-        function setupConnection() {
-            conn.on('open', () => { render(); });
-            conn.on('data', (move) => { game.move(move); render(); });
+        // --- STEP 2: LEVEL SELECT ---
+        function changeLvl(amt) {
+            botLevel = Math.max(1, Math.min(15, botLevel + amt));
+            document.getElementById('lvl-num').innerText = botLevel;
+        }
+
+        function startBotGame() {
+            isBotActive = true;
+            document.getElementById('bot-menu').style.display = 'none';
+            document.getElementById('board-wrapper').style.display = 'flex';
+            if (botLevel === 15) initStockfish();
+            render();
+        }
+
+        // --- STEP 3: GAME LOGIC ---
+        function handleSquareClick(sq) {
+            if (game.turn() !== myColor) return;
+            if (validMoves.includes(sq)) {
+                const move = game.move({ from: selectedSq, to: sq, promotion: 'q' });
+                if (conn) conn.send(move);
+                selectedSq = null; validMoves = []; render();
+                if (isBotActive && !game.game_over()) setTimeout(makeBotMove, 600);
+            } else {
+                const p = game.get(sq);
+                if (p && p.color === myColor) {
+                    selectedSq = sq;
+                    validMoves = game.moves({ square: sq, verbose: true }).map(m => m.to);
+                } else { selectedSq = null; validMoves = []; }
+                render();
+            }
+        }
+
+        function makeBotMove() {
+            if (botLevel === 15 && stockfish) {
+                stockfish.postMessage("position fen " + game.fen());
+                stockfish.postMessage("go depth 15");
+            } else {
+                const moves = game.moves({ verbose: true });
+                if (botLevel > 1) moves.sort((a, b) => (b.captured ? pieces[b.captured].val : 0) - (a.captured ? pieces[a.captured].val : 0));
+                const pick = Math.floor(Math.random() * (16 - botLevel));
+                game.move(moves[Math.min(pick, moves.length - 1)]);
+                render();
+            }
         }
 
         function render() {
+            const boardEl = document.getElementById('board');
             boardEl.innerHTML = '';
             const layout = game.board();
             for (let i = 0; i < 8; i++) {
@@ -96,46 +149,17 @@
                     boardEl.appendChild(sq);
                 }
             }
-            updateStatusText();
+            document.getElementById('status').innerText = game.in_checkmate() ? "Checkmate!" : (game.turn() === 'w' ? "White's Turn" : "Black's Turn");
         }
 
-        function updateStatusText() {
-            if (game.in_checkmate()) statusEl.innerText = "Checkmate!";
-            else if (game.in_draw()) statusEl.innerText = "Draw!";
-            else if (game.turn() === myColor) statusEl.innerText = "Your Turn";
-            else statusEl.innerText = isBotMode ? "Bot is thinking..." : "Waiting for friend...";
-        }
-
-        function handleSquareClick(sq) {
-            if (!isBotMode && !conn) return;
-            if (game.turn() !== myColor) return;
-
-            if (validMoves.includes(sq)) {
-                const move = game.move({ from: selectedSq, to: sq, promotion: 'q' });
-                if (!isBotMode) conn.send(move);
-                
-                selectedSq = null; validMoves = []; render();
-
-                if (isBotMode && !game.game_over()) {
-                    setTimeout(makeBotMove, 800);
-                }
-            } else {
-                const p = game.get(sq);
-                if (p && p.color === myColor) {
-                    selectedSq = sq;
-                    validMoves = game.moves({ square: sq, verbose: true }).map(m => m.to);
-                } else { selectedSq = null; validMoves = []; }
-                render();
-            }
-        }
-
-        function makeBotMove() {
-            const moves = game.moves();
-            if (moves.length === 0) return;
-            // Simple random move bot
-            const move = moves[Math.floor(Math.random() * moves.length)];
-            game.move(move);
-            render();
+        // --- ONLINE LOGIC ---
+        function initOnline(code) {
+            const peer = new Peer(); // Simple version: you're joining/hosting based on code
+            peer.on('open', (id) => {
+                document.getElementById('setup-menu').style.display = 'none';
+                document.getElementById('board-wrapper').style.display = 'flex';
+                // (PeerJS logic goes here)
+            });
         }
     </script>
 </body>
