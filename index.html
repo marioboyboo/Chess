@@ -12,10 +12,8 @@
         .container { background: #34495e; padding: 25px; border-radius: 15px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
         input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
         button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
-        
         #lobby, #bot-menu, #board-wrapper { display: none; }
         .code-display { font-size: 2.5rem; color: #f1c40f; margin: 15px 0; letter-spacing: 3px; font-family: monospace; font-weight: bold; }
-        
         .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; }
         #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 92vw; max-width: 450px; aspect-ratio: 1/1; border: 4px solid #34495e; background-color: #34495e; }
         .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
@@ -23,7 +21,7 @@
         .selected { background: var(--high) !important; }
         .hint::after { content: ""; width: 25%; height: 25%; background: var(--hint); border-radius: 50%; position: absolute; }
         .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; z-index: 2; }
-        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; text-align: center; line-height: 1.4; }
+        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; text-align: center; white-space: pre-line; }
     </style>
 </head>
 <body>
@@ -54,7 +52,7 @@
 
     <div id="board-wrapper">
         <div id="board"></div>
-        <div id="status">Connecting...</div>
+        <div id="status">Ready?</div>
     </div>
 
     <script>
@@ -92,28 +90,26 @@
 
         function initPeer(isHost, code) {
             document.getElementById('setup-menu').style.display = 'none';
-            
+            peer = isHost ? new Peer(code) : new Peer();
+            myColor = isHost ? 'w' : 'b';
+
             if (isHost) {
                 document.getElementById('lobby').style.display = 'block';
                 document.getElementById('display-code').innerText = code;
-                peer = new Peer(code);
-                myColor = 'w';
             } else {
                 document.getElementById('board-wrapper').style.display = 'flex';
-                document.getElementById('status').innerText = "Connecting to " + code + "...";
-                peer = new Peer();
-                myColor = 'b';
+                document.getElementById('status').innerText = "Connecting...";
             }
 
             peer.on('open', () => {
                 if (!isHost) {
-                    conn = peer.connect(code);
+                    conn = peer.connect(code, { reliable: true });
                     setupConn();
                 }
             });
 
-            peer.on('connection', (c) => {
-                conn = c;
+            peer.on('connection', (incoming) => {
+                conn = incoming;
                 setupConn();
                 document.getElementById('lobby').style.display = 'none';
                 document.getElementById('board-wrapper').style.display = 'flex';
@@ -127,11 +123,12 @@
 
         function setupConn() {
             conn.on('open', () => {
-                if (myColor === 'b') conn.send("READY_SIGNAL");
+                if (myColor === 'b') conn.send({type: 'READY'});
                 render();
             });
+
             conn.on('data', (data) => {
-                if (data === "READY_SIGNAL") {
+                if (data.type === 'READY') {
                     document.getElementById('lobby').style.display = 'none';
                     document.getElementById('board-wrapper').style.display = 'flex';
                     render();
@@ -197,7 +194,7 @@
         function handleGameOver(statusEl) {
             if (isResetting) return;
             isResetting = true;
-            let result = game.in_checkmate() ? `CHECKMATE! ${game.turn() === 'w' ? "Black" : "White"} Wins!` : "Draw!";
+            let result = game.in_checkmate() ? `CHECKMATE!\n${game.turn() === 'w' ? "Black" : "White"} Wins!` : "Draw!";
             let seconds = 5;
             const timer = setInterval(() => {
                 statusEl.innerText = result + "\nResetting in " + seconds + "...";
@@ -209,8 +206,9 @@
         function handleSquareClick(sq) {
             if (game.turn() !== myColor) return;
             if (validMoves.includes(sq)) {
-                const move = game.move({ from: selectedSq, to: sq, promotion: 'q' });
-                if (conn) conn.send(move);
+                const moveData = { from: selectedSq, to: sq, promotion: 'q' };
+                const move = game.move(moveData);
+                if (conn) conn.send(moveData);
                 selectedSq = null; validMoves = []; render();
                 if (isBotActive && !game.game_over()) setTimeout(makeBot, 600);
             } else {
