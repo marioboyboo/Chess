@@ -24,7 +24,7 @@
             width: 92vw; max-width: 450px; aspect-ratio: 1/1; 
             border: 4px solid #34495e; 
             background-color: #34495e;
-            visibility: hidden; /* Hidden until game starts */
+            visibility: hidden; 
         }
         .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
         .light { background: var(--light); } .dark { background: var(--dark); }
@@ -61,7 +61,7 @@
 
     <div id="board-wrapper">
         <div id="board"></div>
-        <div id="status">Waiting for game...</div>
+        <div id="status">Establishing connection...</div>
     </div>
 
     <script>
@@ -99,7 +99,6 @@
                 document.getElementById('display-code').innerText = code;
             } else {
                 document.getElementById('board-wrapper').style.display = 'flex';
-                document.getElementById('status').innerText = "Connecting to " + code + "...";
             }
 
             peer.on('open', () => {
@@ -109,8 +108,8 @@
                 }
             });
 
-            peer.on('connection', (c) => {
-                conn = c;
+            peer.on('connection', (incoming) => {
+                conn = incoming; // HOST saves the connection here
                 initConnection();
                 document.getElementById('lobby').style.display = 'none';
                 document.getElementById('board-wrapper').style.display = 'flex';
@@ -123,6 +122,7 @@
                 document.getElementById('status').innerText = "Game Started! White to Move";
                 render();
             });
+
             conn.on('data', (move) => {
                 game.move(move);
                 render();
@@ -157,8 +157,6 @@
                     if (count <= 0) { clearInterval(timer); location.reload(); }
                     count--;
                 }, 1000);
-            } else if (!isBotActive && (!conn || !conn.open)) {
-                sEl.innerText = "Connection lost...";
             } else {
                 sEl.innerText = game.turn() === 'w' ? "White to Move" : "Black to Move";
             }
@@ -169,7 +167,12 @@
             if (validMoves.includes(sq)) {
                 const mData = { from: selectedSq, to: sq, promotion: 'q' };
                 game.move(mData);
-                if (conn) conn.send(mData);
+                
+                // CRITICAL: Send move to opponent
+                if (conn && conn.open) {
+                    conn.send(mData);
+                }
+                
                 selectedSq = null; validMoves = []; render();
                 if (isBotActive && !game.game_over()) setTimeout(botAct, 600);
             } else {
