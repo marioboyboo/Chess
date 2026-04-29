@@ -12,16 +12,19 @@
         .container { background: #34495e; padding: 25px; border-radius: 15px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
         input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
         button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
-        #bot-menu { display: none; }
-        .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 10px 0; }
-        #board-wrapper { display: none; flex-direction: column; align-items: center; }
+        
+        /* New Lobby Styles */
+        #lobby, #bot-menu, #board-wrapper { display: none; }
+        .code-display { font-size: 2.5rem; color: #f1c40f; margin: 15px 0; letter-spacing: 3px; font-family: monospace; }
+        
+        .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; }
         #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 92vw; max-width: 450px; aspect-ratio: 1/1; border: 4px solid #34495e; background-color: #34495e; }
         .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
         .light { background: var(--light); } .dark { background: var(--dark); }
         .selected { background: var(--high) !important; }
         .hint::after { content: ""; width: 25%; height: 25%; background: var(--hint); border-radius: 50%; position: absolute; }
         .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; z-index: 2; }
-        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; transition: all 0.3s; text-align: center; }
+        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
@@ -34,6 +37,14 @@
         <button style="background:#3498db" onclick="checkInput(false)">Join Room</button>
     </div>
 
+    <div class="container" id="lobby">
+        <h2>Waiting for Player...</h2>
+        <p>Give this code to your friend:</p>
+        <div class="code-display" id="display-code">----</div>
+        <p style="font-size: 0.9rem; color: #bdc3c7;">The game will start automatically once they join.</p>
+        <button onclick="window.location.reload()" style="background:#c0392b">Cancel</button>
+    </div>
+
     <div class="container" id="bot-menu">
         <h2>Difficulty</h2>
         <div class="lvl-box" id="lvl-num">1</div>
@@ -44,7 +55,7 @@
 
     <div id="board-wrapper">
         <div id="board"></div>
-        <div id="status">Waiting for game...</div>
+        <div id="status">Connecting...</div>
     </div>
 
     <script>
@@ -62,35 +73,60 @@
         };
 
         function checkInput(isHost) {
-            const input = document.getElementById('room-id').value.trim().toLowerCase();
-            if (input === 'bot') {
+            const input = document.getElementById('room-id').value.trim();
+            if (!input) return alert("Please enter a code!");
+
+            if (input.toLowerCase() === 'bot') {
                 document.getElementById('setup-menu').style.display = 'none';
                 document.getElementById('bot-menu').style.display = 'block';
-                window.addEventListener('keydown', (e) => {
-                    if (document.getElementById('bot-menu').style.display === 'block') {
-                        if (e.key === "ArrowLeft") changeLvl(-1);
-                        if (e.key === "ArrowRight") changeLvl(1);
-                        if (e.key === "Enter") startBotGame();
-                    }
-                });
-            } else { initPeer(isHost, input); }
+            } else {
+                initPeer(isHost, input);
+            }
         }
 
         function initPeer(isHost, code) {
             document.getElementById('setup-menu').style.display = 'none';
-            document.getElementById('board-wrapper').style.display = 'flex';
-            peer = isHost ? new Peer(code) : new Peer();
-            myColor = isHost ? 'w' : 'b';
+            
+            if (isHost) {
+                document.getElementById('lobby').style.display = 'block';
+                document.getElementById('display-code').innerText = code;
+                peer = new Peer(code);
+                myColor = 'w';
+            } else {
+                document.getElementById('board-wrapper').style.display = 'flex';
+                peer = new Peer();
+                myColor = 'b';
+            }
+
             peer.on('open', () => {
-                if(!isHost) { conn = peer.connect(code); setupConn(); }
-                render();
+                if (!isHost) {
+                    conn = peer.connect(code);
+                    setupConn();
+                }
             });
-            peer.on('connection', (c) => { conn = c; setupConn(); });
+
+            peer.on('connection', (c) => {
+                conn = c;
+                setupConn();
+                // When host receives connection, hide lobby and show board
+                document.getElementById('lobby').style.display = 'none';
+                document.getElementById('board-wrapper').style.display = 'flex';
+            });
+
+            peer.on('error', (err) => {
+                alert("Connection Error: " + err.type);
+                window.location.reload();
+            });
         }
 
         function setupConn() {
-            conn.on('open', () => render());
-            conn.on('data', (move) => { game.move(move); render(); });
+            conn.on('open', () => {
+                render();
+            });
+            conn.on('data', (move) => {
+                game.move(move);
+                render();
+            });
         }
 
         function changeLvl(dir) {
@@ -148,23 +184,11 @@
         function handleGameOver(statusEl) {
             if (isResetting) return;
             isResetting = true;
-            
-            let result = "Game Over!";
-            if (game.in_checkmate()) {
-                result = `CHECKMATE! ${game.turn() === 'w' ? "Black" : "White"} Wins!`;
-                statusEl.style.backgroundColor = "#27ae60";
-            } else {
-                result = "Draw!";
-                statusEl.style.backgroundColor = "#e67e22";
-            }
-
+            let result = game.in_checkmate() ? `CHECKMATE! ${game.turn() === 'w' ? "Black" : "White"} Wins!` : "Draw!";
             let seconds = 5;
             const timer = setInterval(() => {
                 statusEl.innerText = `${result} \n Resetting in ${seconds}...`;
-                if (seconds <= 0) {
-                    clearInterval(timer);
-                    window.location.reload(); // Returns to main page
-                }
+                if (seconds <= 0) { clearInterval(timer); window.location.reload(); }
                 seconds--;
             }, 1000);
         }
