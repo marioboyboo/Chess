@@ -12,10 +12,20 @@
         .container { background: #34495e; padding: 25px; border-radius: 15px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
         input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
         button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
+        
         #lobby, #bot-menu, #board-wrapper { display: none; }
         .code-display { font-size: 2.5rem; color: #f1c40f; margin: 15px 0; font-family: monospace; font-weight: bold; }
         .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; }
-        #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 92vw; max-width: 450px; aspect-ratio: 1/1; border: 4px solid #34495e; background-color: #34495e; }
+        
+        #board { 
+            display: grid; 
+            grid-template-columns: repeat(8, 12.5%); 
+            grid-template-rows: repeat(8, 12.5%); 
+            width: 92vw; max-width: 450px; aspect-ratio: 1/1; 
+            border: 4px solid #34495e; 
+            background-color: #34495e;
+            visibility: hidden; /* Hidden until game starts */
+        }
         .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
         .light { background: var(--light); } .dark { background: var(--dark); }
         .selected { background: var(--high) !important; }
@@ -28,7 +38,7 @@
 
     <div class="container" id="setup-menu">
         <h2>Chess Grandmaster</h2>
-        <input type="text" id="room-id" placeholder="Enter Code or 'Bot'">
+        <input type="text" id="room-id" placeholder="Code or 'Bot'">
         <br>
         <button onclick="handleStart(true)">Create / Bot</button>
         <button style="background:#3498db" onclick="handleStart(false)">Join Room</button>
@@ -36,22 +46,22 @@
 
     <div class="container" id="lobby">
         <h2>Waiting for Opponent</h2>
-        <p>Share this code:</p>
+        <p>Give this code to your friend:</p>
         <div class="code-display" id="display-code">----</div>
         <button onclick="location.reload()" style="background:#c0392b">Cancel</button>
     </div>
 
     <div class="container" id="bot-menu">
-        <h2>Select Bot Strength</h2>
+        <h2>Bot Level</h2>
         <div class="lvl-box" id="lvl-num">1</div>
-        <button onclick="changeLvl(-1)">← Decrease</button>
-        <button onclick="startBotGame()">Start Match</button>
-        <button onclick="changeLvl(1)">Increase →</button>
+        <button onclick="changeLvl(-1)">←</button>
+        <button onclick="startBotGame()">Play!</button>
+        <button onclick="changeLvl(1)">→</button>
     </div>
 
     <div id="board-wrapper">
         <div id="board"></div>
-        <div id="status">White's Turn</div>
+        <div id="status">Waiting for game...</div>
     </div>
 
     <script>
@@ -68,14 +78,14 @@
         };
 
         function handleStart(isHost) {
-            const input = document.getElementById('room-id').value.trim();
-            if (!input) return;
+            const val = document.getElementById('room-id').value.trim();
+            if (!val) return;
 
-            if (input.toLowerCase() === 'bot') {
+            if (val.toLowerCase() === 'bot') {
                 document.getElementById('setup-menu').style.display = 'none';
                 document.getElementById('bot-menu').style.display = 'block';
             } else {
-                startOnline(isHost, input);
+                startOnline(isHost, val);
             }
         }
 
@@ -89,6 +99,7 @@
                 document.getElementById('display-code').innerText = code;
             } else {
                 document.getElementById('board-wrapper').style.display = 'flex';
+                document.getElementById('status').innerText = "Connecting to " + code + "...";
             }
 
             peer.on('open', () => {
@@ -107,11 +118,15 @@
         }
 
         function initConnection() {
+            conn.on('open', () => {
+                document.getElementById('board').style.visibility = 'visible';
+                document.getElementById('status').innerText = "Game Started! White to Move";
+                render();
+            });
             conn.on('data', (move) => {
                 game.move(move);
                 render();
             });
-            render();
         }
 
         function render() {
@@ -138,10 +153,12 @@
                 let winMsg = game.in_checkmate() ? `CHECKMATE!\n${game.turn()==='w'?'Black':'White'} Wins!` : "Draw Match!";
                 let count = 5;
                 const timer = setInterval(() => {
-                    sEl.innerText = winMsg + `\nExiting to menu in ${count}...`;
+                    sEl.innerText = winMsg + `\nResetting in ${count}...`;
                     if (count <= 0) { clearInterval(timer); location.reload(); }
                     count--;
                 }, 1000);
+            } else if (!isBotActive && (!conn || !conn.open)) {
+                sEl.innerText = "Connection lost...";
             } else {
                 sEl.innerText = game.turn() === 'w' ? "White to Move" : "Black to Move";
             }
@@ -165,8 +182,8 @@
             }
         }
 
-        function changeLvl(val) {
-            botLevel = Math.max(1, Math.min(15, botLevel + val));
+        function changeLvl(v) {
+            botLevel = Math.max(1, Math.min(15, botLevel + v));
             document.getElementById('lvl-num').innerText = botLevel;
         }
 
@@ -174,6 +191,7 @@
             isBotActive = true;
             document.getElementById('bot-menu').style.display = 'none';
             document.getElementById('board-wrapper').style.display = 'flex';
+            document.getElementById('board').style.visibility = 'visible';
             if (botLevel === 15) {
                 try {
                     stockfish = new Worker('stockfish.js');
