@@ -12,13 +12,18 @@
         .container { background: #34495e; padding: 25px; border-radius: 15px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
         input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
         button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
+        
         #lobby, #bot-menu, #board-wrapper { display: none; }
         .code-display { font-size: 2.5rem; color: #f1c40f; margin: 15px 0; font-family: monospace; font-weight: bold; }
         .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; }
+        
         #board { 
-            display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); 
+            display: grid; 
+            grid-template-columns: repeat(8, 12.5%); 
+            grid-template-rows: repeat(8, 12.5%); 
             width: 92vw; max-width: 450px; aspect-ratio: 1/1; 
-            border: 4px solid #34495e; background-color: #34495e;
+            border: 4px solid #34495e; 
+            background-color: #34495e;
             visibility: hidden; 
         }
         .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
@@ -40,10 +45,9 @@
     </div>
 
     <div class="container" id="lobby">
-        <h2>Lobby</h2>
-        <p>Your Code:</p>
+        <h2>Waiting for Opponent</h2>
+        <p>Give this code to your friend:</p>
         <div class="code-display" id="display-code">----</div>
-        <p>Waiting for friend...</p>
         <button onclick="location.reload()" style="background:#c0392b">Cancel</button>
     </div>
 
@@ -94,11 +98,11 @@
                 document.getElementById('display-code').innerText = code;
             } else {
                 document.getElementById('board-wrapper').style.display = 'flex';
+                document.getElementById('status').innerText = "Finding Host...";
             }
 
             peer.on('open', () => {
                 if (!isHost) {
-                    // Force reliable connection
                     conn = peer.connect(code, { reliable: true });
                     initConnection();
                 }
@@ -107,18 +111,25 @@
             peer.on('connection', (incoming) => {
                 conn = incoming;
                 initConnection();
-                // UI switch for Host
                 document.getElementById('lobby').style.display = 'none';
                 document.getElementById('board-wrapper').style.display = 'flex';
             });
         }
 
         function initConnection() {
-            // This event is the "Handshake"
+            // Heartbeat failsafe
+            let checkInterval = setInterval(() => {
+                if (conn && conn.open) {
+                    document.getElementById('board').style.visibility = 'visible';
+                    document.getElementById('status').innerText = "Connected! White to Move";
+                    render();
+                    clearInterval(checkInterval);
+                }
+            }, 500);
+
             conn.on('open', () => {
-                console.log("Connection fully open!");
                 document.getElementById('board').style.visibility = 'visible';
-                document.getElementById('status').innerText = "Game Started! White to Move";
+                document.getElementById('status').innerText = "Connected! White to Move";
                 render();
             });
 
@@ -126,16 +137,6 @@
                 game.move(move);
                 render();
             });
-            
-            // Backup: if it gets stuck, check connection manually every 1s
-            const checkInt = setInterval(() => {
-                if (conn && conn.open) {
-                    document.getElementById('board').style.visibility = 'visible';
-                    document.getElementById('status').innerText = game.turn() === 'w' ? "White's Turn" : "Black's Turn";
-                    render();
-                    clearInterval(checkInt);
-                }
-            }, 1000);
         }
 
         function render() {
@@ -159,13 +160,15 @@
             }
 
             if (game.game_over()) {
-                let winMsg = game.in_checkmate() ? `CHECKMATE!\n${game.turn()==='w'?'Black':'White'} Wins!` : "Draw!";
+                let winMsg = game.in_checkmate() ? `CHECKMATE!\n${game.turn()==='w'?'Black':'White'} Wins!` : "Draw Match!";
                 let count = 5;
                 const timer = setInterval(() => {
                     sEl.innerText = winMsg + `\nResetting in ${count}...`;
                     if (count <= 0) { clearInterval(timer); location.reload(); }
                     count--;
                 }, 1000);
+            } else {
+                sEl.innerText = game.turn() === 'w' ? "White to Move" : "Black to Move";
             }
         }
 
@@ -197,9 +200,32 @@
             document.getElementById('bot-menu').style.display = 'none';
             document.getElementById('board-wrapper').style.display = 'flex';
             document.getElementById('board').style.visibility = 'visible';
+            if (botLevel === 15) {
+                try {
+                    stockfish = new Worker('stockfish.js');
+                    stockfish.onmessage = (e) => {
+                        if (e.data.includes('bestmove')) {
+                            game.move(e.data.split(' ')[1], { sloppy: true });
+                            render();
+                        }
+                    };
+                } catch(e) { botLevel = 14; }
+            }
             render();
         }
-        // ... (Keep botAct function same)
+
+        function botAct() {
+            if (game.game_over()) return;
+            if (botLevel === 15 && stockfish) {
+                stockfish.postMessage("position fen " + game.fen());
+                stockfish.postMessage("go depth 15");
+            } else {
+                const moves = game.moves({ verbose: true });
+                if (botLevel > 1) moves.sort((a,b) => (b.captured ? pieces[b.captured].val : 0) - (a.captured ? pieces[a.captured].val : 0));
+                game.move(moves[Math.min(Math.floor(Math.random()*(16-botLevel)), moves.length - 1)]);
+                render();
+            }
+        }
     </script>
 </body>
 </html>
