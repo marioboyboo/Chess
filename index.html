@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mobile-Friendly P2P Chess</title>
+    <title>Fixed P2P Chess</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
@@ -17,39 +17,37 @@
         body { 
             background: #2c3e50; 
             color: white; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: sans-serif;
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            padding: 10px; 
             margin: 0;
-            overflow-x: hidden;
-            touch-action: manipulation; /* Improves mobile tap response */
+            padding: 10px;
+            min-height: 100vh;
+            box-sizing: border-box;
         }
 
         .menu { 
             background: #34495e; 
             padding: 15px; 
             border-radius: 12px; 
-            margin-bottom: 15px; 
+            margin-bottom: 10px; 
             text-align: center; 
-            width: 90%; 
-            max-width: 400px; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            width: 100%; 
+            max-width: 360px; 
         }
 
         input { 
-            padding: 12px; 
+            padding: 10px; 
             border-radius: 6px; 
             border: none; 
             width: 80%; 
             margin-bottom: 10px; 
-            font-size: 16px; /* Essential for Android/iOS to prevent auto-zoom */
-            text-align: center;
+            font-size: 16px;
         }
 
         button { 
-            padding: 12px 20px; 
+            padding: 10px 15px; 
             cursor: pointer; 
             background: #27ae60; 
             color: white; 
@@ -57,30 +55,28 @@
             border-radius: 6px; 
             font-weight: bold; 
             margin: 5px;
-            font-size: 14px;
         }
 
-        .secondary-btn { background: #3498db; }
-
-        /* RESPONSIVE BOARD LOGIC */
+        /* THE BOARD FIX */
         #board { 
             display: grid; 
-            grid-template-columns: repeat(8, 1fr); 
-            grid-template-rows: repeat(8, 1fr);
-            width: 92vw;    /* Takes up most of the screen width */
-            height: 92vw;   /* Keeps it a perfect square */
-            max-width: 450px; 
-            max-height: 450px;
-            border: 4px solid #34495e; 
-            box-shadow: 0 8px 25px rgba(0,0,0,0.5); 
+            grid-template-columns: repeat(8, 12.5%); /* Explicitly 1/8th per square */
+            grid-template-rows: repeat(8, 12.5%);
+            width: 95vw;
+            max-width: 450px;
+            aspect-ratio: 1 / 1; /* Forces a perfect square */
+            border: 2px solid #34495e; 
             background-color: #34495e;
+            user-select: none;
+            touch-action: none;
         }
 
         .square { 
+            width: 100%;
+            height: 100%;
             display: flex; 
             justify-content: center; 
             align-items: center; 
-            cursor: pointer; 
             position: relative; 
         }
 
@@ -95,7 +91,6 @@
             background: var(--hint); 
             border-radius: 50%; 
             position: absolute; 
-            z-index: 1; 
         }
 
         .piece-img { 
@@ -103,43 +98,35 @@
             height: 90%; 
             object-fit: contain; 
             pointer-events: none; 
-            z-index: 2; 
         }
 
         #status { 
-            margin: 15px; 
-            font-size: 1rem; 
+            margin: 10px; 
+            padding: 8px 15px; 
             background: rgba(0,0,0,0.3); 
-            padding: 8px 20px; 
             border-radius: 20px;
-            text-align: center;
+            font-size: 0.9rem;
         }
     </style>
 </head>
 <body>
 
     <div class="menu" id="setup-menu">
-        <h3>Chess Online</h3>
-        <input type="text" id="room-id" placeholder="Enter Code (e.g. 55555)">
+        <input type="text" id="room-id" placeholder="Code (e.g. 12345)">
         <br>
-        <button onclick="initPeer(true)">Create Room</button>
-        <button class="secondary-btn" onclick="initPeer(false)">Join Room</button>
+        <button onclick="initPeer(true)">Create</button>
+        <button style="background:#3498db" onclick="initPeer(false)">Join</button>
     </div>
 
-    <div id="status">Enter a room code to play</div>
+    <div id="status">Enter code to play</div>
     <div id="board"></div>
 
     <script>
         const boardEl = document.getElementById('board');
         const statusEl = document.getElementById('status');
         const game = new Chess();
-        let peer = null;
-        let conn = null;
-        let myColor = null; 
-        let selectedSq = null;
-        let validMoves = [];
+        let peer = null, conn = null, myColor = null, selectedSq = null, validMoves = [];
 
-        // SPRITES: Ensure these files are in your GitHub folder!
         const pieces = {
             'p': { w: 'w_pawn.png',   b: 'b_pawn.png' },
             'r': { w: 'w_rook.png',   b: 'b_rook.png' },
@@ -151,100 +138,58 @@
 
         function initPeer(isHost) {
             const code = document.getElementById('room-id').value;
-            if (!code) return alert("Please enter a code!");
-
-            if (isHost) {
-                peer = new Peer(code);
-                myColor = 'w';
-                peer.on('open', () => {
-                    statusEl.innerText = "Room ready! Tell your friend the code.";
-                    document.getElementById('setup-menu').style.display = 'none';
-                });
-                peer.on('connection', (c) => {
-                    conn = c;
-                    setupConnection();
-                });
-                peer.on('error', (err) => {
-                    if (err.type === 'unavailable-id') alert("Room code taken! Try another.");
-                });
-            } else {
-                peer = new Peer();
-                myColor = 'b';
-                peer.on('open', () => {
-                    conn = peer.connect(code);
-                    setupConnection();
-                    document.getElementById('setup-menu').style.display = 'none';
-                });
-            }
+            if (!code) return alert("Enter a code!");
+            peer = isHost ? new Peer(code) : new Peer();
+            myColor = isHost ? 'w' : 'b';
+            
+            peer.on('open', (id) => {
+                if (isHost) statusEl.innerText = "Waiting for friend...";
+                else { conn = peer.connect(code); setupConnection(); }
+                document.getElementById('setup-menu').style.display = 'none';
+            });
+            peer.on('connection', (c) => { conn = c; setupConnection(); });
+            peer.on('error', () => alert("Connection error or code taken."));
         }
 
         function setupConnection() {
-            conn.on('open', () => {
-                statusEl.innerText = `Connected! Playing as ${myColor === 'w' ? 'White' : 'Black'}.`;
-                render();
-            });
-            conn.on('data', (move) => {
-                game.move(move);
-                render();
-            });
+            conn.on('open', () => { render(); });
+            conn.on('data', (move) => { game.move(move); render(); });
         }
 
         function render() {
             boardEl.innerHTML = '';
             const layout = game.board();
-            
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
                     const sqName = String.fromCharCode(97 + j) + (8 - i);
                     const sq = document.createElement('div');
                     sq.className = `square ${(i + j) % 2 === 0 ? 'light' : 'dark'}`;
-                    
                     if (selectedSq === sqName) sq.classList.add('selected');
                     if (validMoves.includes(sqName)) sq.classList.add('hint');
-                    
                     const p = layout[i][j];
-                    if (p) {
-                        sq.innerHTML = `<img src="${pieces[p.type][p.color]}" class="piece-img">`;
-                    }
-                    
+                    if (p) sq.innerHTML = `<img src="${pieces[p.type][p.color]}" class="piece-img">`;
                     sq.onclick = () => handleSquareClick(sqName);
                     boardEl.appendChild(sq);
                 }
             }
-            updateStatus();
-        }
-
-        function updateStatus() {
-            if (game.in_checkmate()) statusEl.innerText = "Checkmate! Game Over.";
-            else if (game.in_draw()) statusEl.innerText = "Draw Game!";
-            else if (game.turn() === myColor) statusEl.innerText = "Your Turn";
-            else statusEl.innerText = "Waiting for friend...";
+            statusEl.innerText = game.in_checkmate() ? "Checkmate!" : (game.turn() === myColor ? "Your Turn" : "Waiting...");
         }
 
         function handleSquareClick(sq) {
             if (!conn || game.turn() !== myColor) return;
-
             if (validMoves.includes(sq)) {
                 const move = game.move({ from: selectedSq, to: sq, promotion: 'q' });
                 conn.send(move);
-                selectedSq = null; 
-                validMoves = [];
-                render();
-                return;
-            }
-
-            const piece = game.get(sq);
-            if (piece && piece.color === myColor) {
-                selectedSq = sq;
-                validMoves = game.moves({ square: sq, verbose: true }).map(m => m.to);
+                selectedSq = null; validMoves = []; render();
             } else {
-                selectedSq = null; 
-                validMoves = [];
+                const p = game.get(sq);
+                if (p && p.color === myColor) {
+                    selectedSq = sq;
+                    validMoves = game.moves({ square: sq, verbose: true }).map(m => m.to);
+                } else { selectedSq = null; validMoves = []; }
+                render();
             }
-            render();
         }
-
-        render();
     </script>
 </body>
 </html>
