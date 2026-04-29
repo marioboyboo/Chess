@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Grandmaster Chess</title>
+    <title>Grandmaster Chess P2P</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
@@ -13,9 +13,8 @@
         input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
         button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
         
-        /* New Lobby Styles */
         #lobby, #bot-menu, #board-wrapper { display: none; }
-        .code-display { font-size: 2.5rem; color: #f1c40f; margin: 15px 0; letter-spacing: 3px; font-family: monospace; }
+        .code-display { font-size: 2.5rem; color: #f1c40f; margin: 15px 0; letter-spacing: 3px; font-family: monospace; font-weight: bold; }
         
         .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; }
         #board { display: grid; grid-template-columns: repeat(8, 12.5%); grid-template-rows: repeat(8, 12.5%); width: 92vw; max-width: 450px; aspect-ratio: 1/1; border: 4px solid #34495e; background-color: #34495e; }
@@ -24,7 +23,7 @@
         .selected { background: var(--high) !important; }
         .hint::after { content: ""; width: 25%; height: 25%; background: var(--hint); border-radius: 50%; position: absolute; }
         .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; z-index: 2; }
-        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; text-align: center; }
+        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; text-align: center; line-height: 1.4; }
     </style>
 </head>
 <body>
@@ -38,10 +37,10 @@
     </div>
 
     <div class="container" id="lobby">
-        <h2>Waiting for Player...</h2>
-        <p>Give this code to your friend:</p>
+        <h2>Lobby</h2>
+        <p>Your Code:</p>
         <div class="code-display" id="display-code">----</div>
-        <p style="font-size: 0.9rem; color: #bdc3c7;">The game will start automatically once they join.</p>
+        <p style="font-size: 0.9rem; color: #bdc3c7;">Waiting for a friend to join...</p>
         <button onclick="window.location.reload()" style="background:#c0392b">Cancel</button>
     </div>
 
@@ -79,6 +78,13 @@
             if (input.toLowerCase() === 'bot') {
                 document.getElementById('setup-menu').style.display = 'none';
                 document.getElementById('bot-menu').style.display = 'block';
+                window.addEventListener('keydown', (e) => {
+                    if (document.getElementById('bot-menu').style.display === 'block') {
+                        if (e.key === "ArrowLeft") changeLvl(-1);
+                        if (e.key === "ArrowRight") changeLvl(1);
+                        if (e.key === "Enter") startBotGame();
+                    }
+                });
             } else {
                 initPeer(isHost, input);
             }
@@ -94,6 +100,7 @@
                 myColor = 'w';
             } else {
                 document.getElementById('board-wrapper').style.display = 'flex';
+                document.getElementById('status').innerText = "Connecting to " + code + "...";
                 peer = new Peer();
                 myColor = 'b';
             }
@@ -108,7 +115,6 @@
             peer.on('connection', (c) => {
                 conn = c;
                 setupConn();
-                // When host receives connection, hide lobby and show board
                 document.getElementById('lobby').style.display = 'none';
                 document.getElementById('board-wrapper').style.display = 'flex';
             });
@@ -121,10 +127,17 @@
 
         function setupConn() {
             conn.on('open', () => {
+                if (myColor === 'b') conn.send("READY_SIGNAL");
                 render();
             });
-            conn.on('data', (move) => {
-                game.move(move);
+            conn.on('data', (data) => {
+                if (data === "READY_SIGNAL") {
+                    document.getElementById('lobby').style.display = 'none';
+                    document.getElementById('board-wrapper').style.display = 'flex';
+                    render();
+                    return;
+                }
+                game.move(data);
                 render();
             });
         }
@@ -187,7 +200,7 @@
             let result = game.in_checkmate() ? `CHECKMATE! ${game.turn() === 'w' ? "Black" : "White"} Wins!` : "Draw!";
             let seconds = 5;
             const timer = setInterval(() => {
-                statusEl.innerText = `${result} \n Resetting in ${seconds}...`;
+                statusEl.innerText = result + "\nResetting in " + seconds + "...";
                 if (seconds <= 0) { clearInterval(timer); window.location.reload(); }
                 seconds--;
             }, 1000);
