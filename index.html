@@ -3,34 +3,118 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Chess Grandmaster</title><script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script><script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script><style>
-:root { --light:#f0d9b5; --dark:#b58863; --high:rgba(255,255,0,0.5); --hint:rgba(0,0,0,0.2); }
+:root {
+    --light:#f0d9b5;
+    --dark:#b58863;
+    --high:rgba(255,255,0,0.5);
+    --hint:rgba(0,0,0,0.2);
+}
 
-body { background:#2c3e50; color:white; font-family:sans-serif;
-display:flex; flex-direction:column; align-items:center; margin:0; padding:10px; }
+body {
+    background:#2c3e50;
+    color:white;
+    font-family:sans-serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    margin:0;
+    padding:10px;
+}
 
-.container { background:#34495e; padding:25px; border-radius:15px; text-align:center; width:100%; max-width:360px; }
+.container {
+    background:#34495e;
+    padding:25px;
+    border-radius:15px;
+    text-align:center;
+    width:100%;
+    max-width:360px;
+}
 
-input { padding:12px; border-radius:8px; border:none; width:85%; margin-bottom:15px; font-size:18px; text-align:center; }
+input {
+    padding:12px;
+    border-radius:8px;
+    border:none;
+    width:85%;
+    margin-bottom:15px;
+    font-size:18px;
+    text-align:center;
+}
 
-button { padding:12px 20px; cursor:pointer; background:#27ae60; color:white; border:none; border-radius:8px; margin:5px; }
+button {
+    padding:12px 20px;
+    cursor:pointer;
+    background:#27ae60;
+    color:white;
+    border:none;
+    border-radius:8px;
+    margin:5px;
+}
 
 #lobby, #bot-menu, #board-wrapper { display:none; }
 
-.code-display { font-size:2.5rem; color:#f1c40f; margin:15px 0; font-family:monospace; }
+.code-display {
+    font-size:2rem;
+    color:#f1c40f;
+    margin:15px 0;
+    font-family:monospace;
+}
 
-.lvl-box { font-size:3rem; margin:15px; }
+.lvl-box {
+    font-size:3rem;
+    margin:15px;
+}
 
-#board { display:grid; grid-template-columns:repeat(8,1fr); width:92vw; max-width:450px; aspect-ratio:1/1; visibility:hidden; }
+#board-wrapper {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    width:100%;
+}
 
-.square { display:flex; justify-content:center; align-items:center; position:relative; }
+#board {
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    width:95vw;
+    max-width:450px;
+    height:95vw;
+    max-height:450px;
+    aspect-ratio:1/1;
+    visibility:hidden;
+}
+
+.square {
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    position:relative;
+}
+
 .light { background:var(--light); }
 .dark { background:var(--dark); }
+
 .selected { background:var(--high)!important; }
-.hint::after { content:""; width:25%; height:25%; background:var(--hint); border-radius:50%; position:absolute; }
 
-.piece-img { width:90%; height:90%; pointer-events:none; }
+.hint::after {
+    content:"";
+    width:25%;
+    height:25%;
+    background:var(--hint);
+    border-radius:50%;
+    position:absolute;
+}
 
-#status { margin-top:10px; padding:10px; background:rgba(0,0,0,0.3); border-radius:20px; }
+.piece-img {
+    width:90%;
+    height:90%;
+    pointer-events:none;
+}
+
+#status {
+    margin-top:10px;
+    padding:10px;
+    background:rgba(0,0,0,0.3);
+    border-radius:20px;
+}
 </style></head><body><div class="container" id="setup-menu">
     <h2>Chess Grandmaster</h2>
     <input id="room-id" placeholder="Code or 'Bot'">
@@ -38,7 +122,7 @@ button { padding:12px 20px; cursor:pointer; background:#27ae60; color:white; bor
     <button onclick="handleStart(true)">Create / Bot</button>
     <button style="background:#3498db" onclick="handleStart(false)">Join</button>
 </div><div class="container" id="lobby">
-    <h2>Waiting</h2>
+    <h2>Waiting for opponent</h2>
     <div class="code-display" id="display-code"></div>
 </div><div class="container" id="bot-menu">
     <div class="lvl-box" id="lvl-num">1</div>
@@ -47,7 +131,7 @@ button { padding:12px 20px; cursor:pointer; background:#27ae60; color:white; bor
     <button onclick="changeLvl(1)">→</button>
 </div><div id="board-wrapper">
     <div id="board"></div>
-    <div id="status">...</div>
+    <div id="status">Connecting...</div>
 </div><script>
 const game = new Chess();
 
@@ -79,7 +163,7 @@ function handleStart(isHost){
     }
 }
 
-/* ---------- MULTIPLAYER (FIXED) ---------- */
+/* MULTIPLAYER */
 
 function startOnline(isHost,code){
     document.getElementById('setup-menu').style.display='none';
@@ -110,12 +194,14 @@ function startOnline(isHost,code){
 
 function setupConn(){
     conn.on('open',()=>{
-        conn.send({type:'init'});
-        startGame();
+        if(myColor==='w'){
+            conn.send({type:'start'});
+            startGame();
+        }
     });
 
     conn.on('data',data=>{
-        if(data.type==='init'){
+        if(data.type==='start'){
             game.reset();
             startGame();
         }
@@ -136,7 +222,7 @@ function startGame(){
     render();
 }
 
-/* ---------- BOT (UNCHANGED LOGIC) ---------- */
+/* BOT */
 
 function changeLvl(v){
     botLevel=Math.max(1,Math.min(15,botLevel+v));
@@ -189,7 +275,7 @@ function botAct(){
     }
 }
 
-/* ---------- GAME ---------- */
+/* GAME */
 
 function render(){
     const b=document.getElementById('board');
@@ -239,7 +325,6 @@ function handleMove(sq){
 
         selectedSq=null;
         validMoves=[];
-
         render();
 
         if(isBotActive && !game.game_over()){
