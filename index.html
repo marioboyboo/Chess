@@ -1,231 +1,262 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chess Grandmaster</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <style>
-        :root { --light: #f0d9b5; --dark: #b58863; --high: rgba(255, 255, 0, 0.5); --hint: rgba(0, 0, 0, 0.2); }
-        body { background: #2c3e50; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; min-height: 100vh; box-sizing: border-box; }
-        .container { background: #34495e; padding: 25px; border-radius: 15px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
-        input { padding: 12px; border-radius: 8px; border: none; width: 85%; margin-bottom: 15px; font-size: 18px; text-align: center; }
-        button { padding: 12px 20px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; font-size: 16px; }
-        
-        #lobby, #bot-menu, #board-wrapper { display: none; }
-        .code-display { font-size: 2.5rem; color: #f1c40f; margin: 15px 0; font-family: monospace; font-weight: bold; }
-        .lvl-box { font-size: 4rem; font-weight: bold; color: #f1c40f; margin: 20px 0; }
-        
-        #board { 
-            display: grid; 
-            grid-template-columns: repeat(8, 12.5%); 
-            grid-template-rows: repeat(8, 12.5%); 
-            width: 92vw; max-width: 450px; aspect-ratio: 1/1; 
-            border: 4px solid #34495e; 
-            background-color: #34495e;
-            visibility: hidden; 
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Chess Grandmaster</title><script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script><script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script><style>
+:root { --light:#f0d9b5; --dark:#b58863; --high:rgba(255,255,0,0.5); --hint:rgba(0,0,0,0.2); }
+
+body { background:#2c3e50; color:white; font-family:sans-serif;
+display:flex; flex-direction:column; align-items:center; margin:0; padding:10px; }
+
+.container { background:#34495e; padding:25px; border-radius:15px; text-align:center; width:100%; max-width:360px; }
+
+input { padding:12px; border-radius:8px; border:none; width:85%; margin-bottom:15px; font-size:18px; text-align:center; }
+
+button { padding:12px 20px; cursor:pointer; background:#27ae60; color:white; border:none; border-radius:8px; margin:5px; }
+
+#lobby, #bot-menu, #board-wrapper { display:none; }
+
+.code-display { font-size:2.5rem; color:#f1c40f; margin:15px 0; font-family:monospace; }
+
+.lvl-box { font-size:3rem; margin:15px; }
+
+#board { display:grid; grid-template-columns:repeat(8,1fr); width:92vw; max-width:450px; aspect-ratio:1/1; visibility:hidden; }
+
+.square { display:flex; justify-content:center; align-items:center; position:relative; }
+.light { background:var(--light); }
+.dark { background:var(--dark); }
+.selected { background:var(--high)!important; }
+.hint::after { content:""; width:25%; height:25%; background:var(--hint); border-radius:50%; position:absolute; }
+
+.piece-img { width:90%; height:90%; pointer-events:none; }
+
+#status { margin-top:10px; padding:10px; background:rgba(0,0,0,0.3); border-radius:20px; }
+</style></head><body><div class="container" id="setup-menu">
+    <h2>Chess Grandmaster</h2>
+    <input id="room-id" placeholder="Code or 'Bot'">
+    <br>
+    <button onclick="handleStart(true)">Create / Bot</button>
+    <button style="background:#3498db" onclick="handleStart(false)">Join</button>
+</div><div class="container" id="lobby">
+    <h2>Waiting</h2>
+    <div class="code-display" id="display-code"></div>
+</div><div class="container" id="bot-menu">
+    <div class="lvl-box" id="lvl-num">1</div>
+    <button onclick="changeLvl(-1)">←</button>
+    <button onclick="startBotGame()">Play</button>
+    <button onclick="changeLvl(1)">→</button>
+</div><div id="board-wrapper">
+    <div id="board"></div>
+    <div id="status">...</div>
+</div><script>
+const game = new Chess();
+
+let peer=null, conn=null;
+let myColor='w', myTurn=false;
+
+let selectedSq=null, validMoves=[];
+
+let isBotActive=false, botLevel=1, stockfish=null;
+
+const pieces={
+p:{w:'w_pawn.png',b:'b_pawn.png',val:10},
+r:{w:'w_rook.png',b:'b_rook.png',val:50},
+n:{w:'w_knight.png',b:'b_knight.png',val:30},
+b:{w:'w_bishop.png',b:'b_bishop.png',val:30},
+q:{w:'w_queen.png',b:'b_queen.png',val:90},
+k:{w:'w_king.png',b:'b_king.png',val:900}
+};
+
+function handleStart(isHost){
+    const val=document.getElementById('room-id').value.trim();
+    if(!val) return;
+
+    if(val.toLowerCase()==='bot'){
+        document.getElementById('setup-menu').style.display='none';
+        document.getElementById('bot-menu').style.display='block';
+    } else {
+        startOnline(isHost,val);
+    }
+}
+
+/* ---------- MULTIPLAYER (FIXED) ---------- */
+
+function startOnline(isHost,code){
+    document.getElementById('setup-menu').style.display='none';
+
+    peer=new Peer(isHost?code:undefined);
+    myColor=isHost?'w':'b';
+
+    if(isHost){
+        document.getElementById('lobby').style.display='block';
+        document.getElementById('display-code').innerText=code;
+    } else {
+        document.getElementById('status').innerText="Finding host...";
+    }
+
+    peer.on('open',()=>{
+        if(!isHost){
+            conn=peer.connect(code);
+            setupConn();
         }
-        .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
-        .light { background: var(--light); } .dark { background: var(--dark); }
-        .selected { background: var(--high) !important; }
-        .hint::after { content: ""; width: 25%; height: 25%; background: var(--hint); border-radius: 50%; position: absolute; }
-        .piece-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; }
-        #status { margin-top: 15px; padding: 10px 20px; background: rgba(0,0,0,0.3); border-radius: 20px; font-weight: bold; text-align: center; white-space: pre-line; }
-    </style>
-</head>
-<body>
+    });
 
-    <div class="container" id="setup-menu">
-        <h2>Chess Grandmaster</h2>
-        <input type="text" id="room-id" placeholder="Code or 'Bot'">
-        <br>
-        <button onclick="handleStart(true)">Create / Bot</button>
-        <button style="background:#3498db" onclick="handleStart(false)">Join Room</button>
-    </div>
+    peer.on('connection',c=>{
+        conn=c;
+        setupConn();
+        document.getElementById('lobby').style.display='none';
+    });
+}
 
-    <div class="container" id="lobby">
-        <h2>Waiting for Opponent</h2>
-        <p>Give this code to your friend:</p>
-        <div class="code-display" id="display-code">----</div>
-        <button onclick="location.reload()" style="background:#c0392b">Cancel</button>
-    </div>
+function setupConn(){
+    conn.on('open',()=>{
+        conn.send({type:'init'});
+        startGame();
+    });
 
-    <div class="container" id="bot-menu">
-        <h2>Bot Level</h2>
-        <div class="lvl-box" id="lvl-num">1</div>
-        <button onclick="changeLvl(-1)">←</button>
-        <button onclick="startBotGame()">Play!</button>
-        <button onclick="changeLvl(1)">→</button>
-    </div>
-
-    <div id="board-wrapper">
-        <div id="board"></div>
-        <div id="status">Establishing connection...</div>
-    </div>
-
-    <script>
-        const game = new Chess();
-        let myColor = 'w', botLevel = 1, isBotActive = false, selectedSq = null, validMoves = [], stockfish = null, conn = null, peer = null;
-
-        const pieces = {
-            'p': { w: 'w_pawn.png', b: 'b_pawn.png', val: 10 },
-            'r': { w: 'w_rook.png', b: 'b_rook.png', val: 50 },
-            'n': { w: 'w_knight.png', b: 'b_knight.png', val: 30 },
-            'b': { w: 'w_bishop.png', b: 'b_bishop.png', val: 30 },
-            'q': { w: 'w_queen.png', b: 'b_queen.png', val: 90 },
-            'k': { w: 'w_king.png', b: 'b_king.png', val: 900 }
-        };
-
-        function handleStart(isHost) {
-            const val = document.getElementById('room-id').value.trim();
-            if (!val) return;
-            if (val.toLowerCase() === 'bot') {
-                document.getElementById('setup-menu').style.display = 'none';
-                document.getElementById('bot-menu').style.display = 'block';
-            } else {
-                startOnline(isHost, val);
-            }
-        }
-
-        function startOnline(isHost, code) {
-            document.getElementById('setup-menu').style.display = 'none';
-            peer = isHost ? new Peer(code) : new Peer();
-            myColor = isHost ? 'w' : 'b';
-
-            if (isHost) {
-                document.getElementById('lobby').style.display = 'block';
-                document.getElementById('display-code').innerText = code;
-            } else {
-                document.getElementById('board-wrapper').style.display = 'flex';
-                document.getElementById('status').innerText = "Finding Host...";
-            }
-
-            peer.on('open', () => {
-                if (!isHost) {
-                    conn = peer.connect(code, { reliable: true });
-                    initConnection();
-                }
-            });
-
-            peer.on('connection', (incoming) => {
-                conn = incoming;
-                initConnection();
-                document.getElementById('lobby').style.display = 'none';
-                document.getElementById('board-wrapper').style.display = 'flex';
-            });
-        }
-
-        function initConnection() {
-            // Heartbeat failsafe
-            let checkInterval = setInterval(() => {
-                if (conn && conn.open) {
-                    document.getElementById('board').style.visibility = 'visible';
-                    document.getElementById('status').innerText = "Connected! White to Move";
-                    render();
-                    clearInterval(checkInterval);
-                }
-            }, 500);
-
-            conn.on('open', () => {
-                document.getElementById('board').style.visibility = 'visible';
-                document.getElementById('status').innerText = "Connected! White to Move";
-                render();
-            });
-
-            conn.on('data', (move) => {
-                game.move(move);
-                render();
-            });
+    conn.on('data',data=>{
+        if(data.type==='init'){
+            game.reset();
+            startGame();
         }
 
-        function render() {
-            const bEl = document.getElementById('board');
-            const sEl = document.getElementById('status');
-            bEl.innerHTML = '';
-            const layout = game.board();
-
-            for (let i = 0; i < 8; i++) {
-                for (let j = 0; j < 8; j++) {
-                    const sqN = String.fromCharCode(97 + j) + (8 - i);
-                    const sq = document.createElement('div');
-                    sq.className = `square ${(i + j) % 2 === 0 ? 'light' : 'dark'}`;
-                    if (selectedSq === sqN) sq.classList.add('selected');
-                    if (validMoves.includes(sqN)) sq.classList.add('hint');
-                    const p = layout[i][j];
-                    if (p) sq.innerHTML = `<img src="${pieces[p.type][p.color]}" class="piece-img">`;
-                    if (!game.game_over()) sq.onclick = () => handleMove(sqN);
-                    bEl.appendChild(sq);
-                }
-            }
-
-            if (game.game_over()) {
-                let winMsg = game.in_checkmate() ? `CHECKMATE!\n${game.turn()==='w'?'Black':'White'} Wins!` : "Draw Match!";
-                let count = 5;
-                const timer = setInterval(() => {
-                    sEl.innerText = winMsg + `\nResetting in ${count}...`;
-                    if (count <= 0) { clearInterval(timer); location.reload(); }
-                    count--;
-                }, 1000);
-            } else {
-                sEl.innerText = game.turn() === 'w' ? "White to Move" : "Black to Move";
-            }
-        }
-
-        function handleMove(sq) {
-            if (game.turn() !== myColor) return;
-            if (validMoves.includes(sq)) {
-                const mData = { from: selectedSq, to: sq, promotion: 'q' };
-                game.move(mData);
-                if (conn && conn.open) conn.send(mData);
-                selectedSq = null; validMoves = []; render();
-                if (isBotActive && !game.game_over()) setTimeout(botAct, 600);
-            } else {
-                const p = game.get(sq);
-                if (p && p.color === myColor) {
-                    selectedSq = sq;
-                    validMoves = game.moves({ square: sq, verbose: true }).map(m => m.to);
-                } else { selectedSq = null; validMoves = []; }
-                render();
-            }
-        }
-
-        function changeLvl(v) {
-            botLevel = Math.max(1, Math.min(15, botLevel + v));
-            document.getElementById('lvl-num').innerText = botLevel;
-        }
-
-        function startBotGame() {
-            isBotActive = true;
-            document.getElementById('bot-menu').style.display = 'none';
-            document.getElementById('board-wrapper').style.display = 'flex';
-            document.getElementById('board').style.visibility = 'visible';
-            if (botLevel === 15) {
-                try {
-                    stockfish = new Worker('stockfish.js');
-                    stockfish.onmessage = (e) => {
-                        if (e.data.includes('bestmove')) {
-                            game.move(e.data.split(' ')[1], { sloppy: true });
-                            render();
-                        }
-                    };
-                } catch(e) { botLevel = 14; }
-            }
+        if(data.type==='move'){
+            game.move(data.move);
+            myTurn=true;
             render();
         }
+    });
+}
 
-        function botAct() {
-            if (game.game_over()) return;
-            if (botLevel === 15 && stockfish) {
-                stockfish.postMessage("position fen " + game.fen());
-                stockfish.postMessage("go depth 15");
-            } else {
-                const moves = game.moves({ verbose: true });
-                if (botLevel > 1) moves.sort((a,b) => (b.captured ? pieces[b.captured].val : 0) - (a.captured ? pieces[a.captured].val : 0));
-                game.move(moves[Math.min(Math.floor(Math.random()*(16-botLevel)), moves.length - 1)]);
-                render();
-            }
+function startGame(){
+    document.getElementById('board-wrapper').style.display='flex';
+    document.getElementById('board').style.visibility='visible';
+
+    myTurn=(myColor==='w');
+    render();
+}
+
+/* ---------- BOT (UNCHANGED LOGIC) ---------- */
+
+function changeLvl(v){
+    botLevel=Math.max(1,Math.min(15,botLevel+v));
+    document.getElementById('lvl-num').innerText=botLevel;
+}
+
+function startBotGame(){
+    isBotActive=true;
+
+    document.getElementById('bot-menu').style.display='none';
+    document.getElementById('board-wrapper').style.display='flex';
+    document.getElementById('board').style.visibility='visible';
+
+    myColor='w';
+    myTurn=true;
+
+    if(botLevel===15){
+        try{
+            stockfish=new Worker('stockfish.js');
+            stockfish.onmessage=e=>{
+                if(e.data.includes('bestmove')){
+                    game.move(e.data.split(' ')[1],{sloppy:true});
+                    render();
+                }
+            };
+        }catch(e){ botLevel=14; }
+    }
+
+    render();
+}
+
+function botAct(){
+    if(game.game_over()) return;
+
+    if(botLevel===15 && stockfish){
+        stockfish.postMessage("position fen "+game.fen());
+        stockfish.postMessage("go depth 15");
+    } else {
+        const moves=game.moves({verbose:true});
+
+        if(botLevel>1){
+            moves.sort((a,b)=>
+                (b.captured?pieces[b.captured].val:0)-
+                (a.captured?pieces[a.captured].val:0)
+            );
         }
-    </script>
-</body>
+
+        game.move(moves[Math.min(Math.floor(Math.random()*(16-botLevel)),moves.length-1)]);
+        render();
+    }
+}
+
+/* ---------- GAME ---------- */
+
+function render(){
+    const b=document.getElementById('board');
+    b.innerHTML='';
+
+    const layout=game.board();
+
+    for(let i=0;i<8;i++){
+        for(let j=0;j<8;j++){
+            const sqN=String.fromCharCode(97+j)+(8-i);
+            const sq=document.createElement('div');
+
+            sq.className='square '+((i+j)%2?'dark':'light');
+
+            if(selectedSq===sqN) sq.classList.add('selected');
+            if(validMoves.includes(sqN)) sq.classList.add('hint');
+
+            const p=layout[i][j];
+            if(p){
+                sq.innerHTML=`<img src="${pieces[p.type][p.color]}" class="piece-img">`;
+            }
+
+            sq.onclick=()=>handleMove(sqN);
+            b.appendChild(sq);
+        }
+    }
+
+    document.getElementById('status').innerText =
+        game.turn()==='w' ? "White to move" : "Black to move";
+}
+
+function handleMove(sq){
+    if(isBotActive){
+        if(game.turn()!==myColor) return;
+    } else {
+        if(!myTurn) return;
+    }
+
+    if(validMoves.includes(sq)){
+        const move={from:selectedSq,to:sq,promotion:'q'};
+        game.move(move);
+
+        if(conn && conn.open){
+            conn.send({type:'move',move});
+            myTurn=false;
+        }
+
+        selectedSq=null;
+        validMoves=[];
+
+        render();
+
+        if(isBotActive && !game.game_over()){
+            setTimeout(botAct,600);
+        }
+
+    } else {
+        const p=game.get(sq);
+        if(p && p.color===myColor){
+            selectedSq=sq;
+            validMoves=game.moves({square:sq,verbose:true}).map(m=>m.to);
+        } else {
+            selectedSq=null;
+            validMoves=[];
+        }
+        render();
+    }
+}
+</script></body>
 </html>
